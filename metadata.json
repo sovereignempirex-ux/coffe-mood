@@ -1,0 +1,6 @@
+{
+  "name": "Mood Cafe",
+  "description": "Premium 3D interactive cafe and coffee ordering system with live menu, custom cart, WhatsApp orders, admin dashboard and user account management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
