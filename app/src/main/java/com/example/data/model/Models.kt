@@ -116,7 +116,9 @@ data class CafeSettingsEntity(
     val storeStatus: String = "OPEN", // OPEN, BUSY, CLOSED
     val apiBaseUrl: String = "",
     val googleClientId: String = "",
-    val enableGoogleLogin: Boolean = false
+    val enableGoogleLogin: Boolean = false,
+    val isLiteMode: Boolean = false,
+    val isSoundEnabled: Boolean = true
 )
 
 data class AppNotification(
@@ -133,6 +135,9 @@ data class CartItem(
     var quantity: Int = 1,
     val selectedSize: String = "وسط (Medium)",
     val selectedAddons: List<String> = emptyList(),
+    val sweetnessLevel: String = "مضبوط",
+    val milkType: String = "عادي",
+    val iceLevel: String = "معتدل",
     val notes: String = ""
 ) {
     val unitPrice: Double

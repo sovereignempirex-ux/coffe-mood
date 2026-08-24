@@ -39,13 +39,47 @@ fun CafeWorld3DCanvas(
     motionEnabled: Boolean = true,
     intensity: Float = 1.0f
 ) {
+    if (!motionEnabled) {
+        // Ultra-lightweight Static Mode for Low-End Devices (Zero CPU/GPU animation load)
+        Canvas(modifier = modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            drawRect(color = MoodDarkInk)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        MoodAmberDark.copy(alpha = 0.18f * intensity),
+                        Color.Transparent
+                    ),
+                    center = Offset(width * 0.15f, height * 0.1f),
+                    radius = width * 0.7f
+                ),
+                radius = width * 0.7f,
+                center = Offset(width * 0.15f, height * 0.1f)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        MoodAmberDeep.copy(alpha = 0.22f * intensity),
+                        Color.Transparent
+                    ),
+                    center = Offset(width * 0.85f, height * 0.9f),
+                    radius = width * 0.65f
+                ),
+                radius = width * 0.65f,
+                center = Offset(width * 0.85f, height * 0.9f)
+            )
+        }
+        return
+    }
+
     val infiniteTransition = rememberInfiniteTransition(label = "CafeWorldAnimation")
     
     val time by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (motionEnabled) 16000 else 100000, easing = LinearEasing),
+            animation = tween(durationMillis = 16000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "WorldTime"

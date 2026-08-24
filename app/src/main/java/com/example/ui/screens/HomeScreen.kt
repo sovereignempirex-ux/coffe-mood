@@ -33,6 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -43,6 +45,8 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,6 +86,8 @@ import com.example.ui.components.CafeWorld3DCanvas
 import com.example.ui.components.GlassCard
 import com.example.ui.components.GlowBadge
 import com.example.ui.components.GoldGradientButton
+import com.example.ui.components.MoodRouletteDialog
+import com.example.ui.components.OrderTrackingDialog
 import com.example.ui.theme.MoodAmberGlow
 import com.example.ui.theme.MoodCreamText
 import com.example.ui.theme.MoodDarkCard
@@ -108,6 +114,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val showFavoritesOnly by viewModel.showFavoritesOnly.collectAsState()
     val products by viewModel.filteredProducts.collectAsState()
     val favoriteIds by viewModel.favoriteIds.collectAsState()
     val cartItems by viewModel.cartItems.collectAsState()
@@ -115,11 +122,19 @@ fun HomeScreen(
     val cafeSettings by viewModel.cafeSettings.collectAsState()
     val selectedProductForModal by viewModel.selectedProductForModal.collectAsState()
     val isCartOpen by viewModel.isCartOpen.collectAsState()
+    val showMoodRoulette by viewModel.showMoodRoulette.collectAsState()
+    val isSpinningRoulette by viewModel.isSpinningRoulette.collectAsState()
+    val rouletteWinner by viewModel.rouletteWinner.collectAsState()
+    val trackedOrder by viewModel.trackedOrder.collectAsState()
 
     var isSearchExpanded by remember { mutableStateOf(false) }
 
     // Intercept back presses when modals or sheets are open
-    if (isCartOpen) {
+    if (showMoodRoulette) {
+        BackHandler { viewModel.closeMoodRoulette() }
+    } else if (trackedOrder != null) {
+        BackHandler { viewModel.closeOrderTracking() }
+    } else if (isCartOpen) {
         BackHandler { viewModel.closeCart() }
     } else if (selectedProductForModal != null) {
         BackHandler { viewModel.closeProductModal() }
@@ -163,8 +178,8 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Background 3D Canvas
-            CafeWorld3DCanvas(motionEnabled = cafeSettings.motionEnabled)
+            // Background 3D Canvas (ultra-lightweight mode automatically applied when isLiteMode is true)
+            CafeWorld3DCanvas(motionEnabled = cafeSettings.motionEnabled && !cafeSettings.isLiteMode)
 
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
@@ -179,6 +194,11 @@ fun HomeScreen(
                         cafeNameAr = cafeSettings.cafeNameAr,
                         cafeNameEn = cafeSettings.cafeNameEn,
                         userRole = currentUser?.role ?: UserRole.USER.name,
+                        isLiteMode = cafeSettings.isLiteMode,
+                        isSoundEnabled = cafeSettings.isSoundEnabled,
+                        onToggleLiteMode = { viewModel.toggleLiteMode() },
+                        onToggleSound = { viewModel.toggleSoundEnabled() },
+                        onMoodRouletteClick = { viewModel.openMoodRoulette() },
                         onSearchToggle = { isSearchExpanded = !isSearchExpanded },
                         onProfileClick = { viewModel.navigateTo(AppScreen.USER_PROFILE) },
                         onAdminClick = { viewModel.navigateTo(AppScreen.ADMIN_DASHBOARD) }
@@ -224,16 +244,21 @@ fun HomeScreen(
                     HomeHeroSection(
                         title = cafeSettings.heroTitle,
                         tagline = cafeSettings.heroTagline,
+                        isLiteMode = cafeSettings.isLiteMode,
                         onExploreMenu = { viewModel.selectCategory(ProductCategory.ALL) },
+                        onMoodRoulette = { viewModel.openMoodRoulette() },
                         onOpenCart = { viewModel.openCart() }
                     )
                 }
 
-                // 3. Category Pills
+                // 3. Category Pills (with Favorites filter)
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     CategoryPillsRow(
                         selectedCategory = selectedCategory,
-                        onSelectCategory = { viewModel.selectCategory(it) }
+                        showFavoritesOnly = showFavoritesOnly,
+                        favoritesCount = favoriteIds.size,
+                        onSelectCategory = { viewModel.selectCategory(it) },
+                        onToggleFavoritesOnly = { viewModel.toggleFavoritesOnly() }
                     )
                 }
 
@@ -247,12 +272,15 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "قائمة المشروبات (${products.size})",
+                            text = if (showFavoritesOnly) "المشروبات المفضلة ❤️ (${products.size})" else "قائمة المشروبات (${products.size})",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MoodGoldPrimary
                         )
-                        GlowBadge(text = selectedCategory.titleAr, isTeal = true)
+                        GlowBadge(
+                            text = if (showFavoritesOnly) "المفضلة" else selectedCategory.titleAr,
+                            isTeal = !showFavoritesOnly
+                        )
                     }
                 }
 
@@ -299,6 +327,25 @@ fun HomeScreen(
                 )
             }
 
+            // Mood Roulette Dialog (عجلة الحظ التفاعلية)
+            if (showMoodRoulette) {
+                MoodRouletteDialog(
+                    isSpinning = isSpinningRoulette,
+                    winnerProduct = rouletteWinner,
+                    onSpin = { viewModel.spinMoodRoulette() },
+                    onAddToCart = { p -> viewModel.addToCart(p) },
+                    onDismiss = { viewModel.closeMoodRoulette() }
+                )
+            }
+
+            // Order Tracking Dialog (تتبع مسار الطلب الحي)
+            trackedOrder?.let { order ->
+                OrderTrackingDialog(
+                    order = order,
+                    onDismiss = { viewModel.closeOrderTracking() }
+                )
+            }
+
             // Cart Sheet
             if (isCartOpen) {
                 CartSheet(
@@ -320,6 +367,11 @@ private fun HomeTopBar(
     cafeNameAr: String,
     cafeNameEn: String,
     userRole: String,
+    isLiteMode: Boolean,
+    isSoundEnabled: Boolean,
+    onToggleLiteMode: () -> Unit,
+    onToggleSound: () -> Unit,
+    onMoodRouletteClick: () -> Unit,
     onSearchToggle: () -> Unit,
     onProfileClick: () -> Unit,
     onAdminClick: () -> Unit
@@ -330,7 +382,7 @@ private fun HomeTopBar(
             .clip(RoundedCornerShape(20.dp))
             .border(BorderStroke(1.dp, MoodGlassBorder), RoundedCornerShape(20.dp))
             .background(MoodGlassSurface)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -347,7 +399,7 @@ private fun HomeTopBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             Brush.linearGradient(listOf(MoodGoldPrimary, MoodGoldDark))
@@ -355,47 +407,116 @@ private fun HomeTopBar(
                         .shadow(8.dp, RoundedCornerShape(12.dp), spotColor = MoodGoldPrimary),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("☕", fontSize = 20.sp)
+                    Text("☕", fontSize = 18.sp)
                 }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
                         text = cafeNameAr,
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Black,
                         color = MoodCreamText
                     )
                     Text(
                         text = cafeNameEn.uppercase(),
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = MoodGoldPrimary,
-                        letterSpacing = 1.5.sp
+                        letterSpacing = 1.2.sp
                     )
                 }
             }
 
-            // Actions
+            // Quick Actions: Lite Mode, Sound, Roulette, Search, Profile, Admin
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // Lite Mode / Low-End Device Fast Toggle
                 IconButton(
-                    onClick = onSearchToggle,
+                    onClick = onToggleLiteMode,
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isLiteMode) MoodGoldPrimary.copy(alpha = 0.25f) else MoodGlassSurfaceElevated)
+                        .border(
+                            BorderStroke(
+                                0.8.dp,
+                                if (isLiteMode) MoodGoldPrimary else MoodGlassBorder
+                            ),
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = "وضع الأداء الفائق",
+                        tint = if (isLiteMode) MoodGoldPrimary else MoodMutedText,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Interactive Sound Toggle
+                IconButton(
+                    onClick = onToggleSound,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isSoundEnabled) MoodTealNeon.copy(alpha = 0.2f) else MoodGlassSurfaceElevated)
+                        .border(
+                            BorderStroke(
+                                0.8.dp,
+                                if (isSoundEnabled) MoodTealNeon else MoodGlassBorder
+                            ),
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = if (isSoundEnabled) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                        contentDescription = "صوت",
+                        tint = if (isSoundEnabled) MoodTealNeon else MoodMutedText,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Mood Roulette Shortcut
+                IconButton(
+                    onClick = onMoodRouletteClick,
+                    modifier = Modifier
+                        .size(34.dp)
                         .clip(CircleShape)
                         .background(MoodGlassSurfaceElevated)
                         .border(BorderStroke(0.8.dp, MoodGlassBorder), CircleShape)
                 ) {
-                    Icon(Icons.Default.Search, contentDescription = "بحث", tint = MoodCreamText, modifier = Modifier.size(18.dp))
+                    Icon(
+                        imageVector = Icons.Default.Casino,
+                        contentDescription = "عجلة الحظ",
+                        tint = MoodGoldPrimary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Search Toggle
+                IconButton(
+                    onClick = onSearchToggle,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MoodGlassSurfaceElevated)
+                        .border(BorderStroke(0.8.dp, MoodGlassBorder), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "بحث",
+                        tint = MoodCreamText,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
 
                 if (userRole == UserRole.ADMIN.name) {
                     IconButton(
                         onClick = onAdminClick,
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
                             .background(MoodGoldPrimary.copy(alpha = 0.18f))
                             .border(BorderStroke(0.8.dp, MoodGoldPrimary.copy(alpha = 0.5f)), CircleShape)
@@ -404,7 +525,7 @@ private fun HomeTopBar(
                             Icons.Default.AdminPanelSettings,
                             contentDescription = "لوحة الإدارة",
                             tint = MoodGoldPrimary,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
@@ -412,12 +533,17 @@ private fun HomeTopBar(
                 IconButton(
                     onClick = onProfileClick,
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(34.dp)
                         .clip(CircleShape)
                         .background(MoodGlassSurfaceElevated)
                         .border(BorderStroke(0.8.dp, MoodGlassBorder), CircleShape)
                 ) {
-                    Icon(Icons.Default.Person, contentDescription = "الحساب", tint = MoodGoldPrimary, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.Person,
+                        contentDescription = "الحساب",
+                        tint = MoodGoldPrimary,
+                        modifier = Modifier.size(17.dp)
+                    )
                 }
             }
         }
@@ -428,7 +554,9 @@ private fun HomeTopBar(
 private fun HomeHeroSection(
     title: String,
     tagline: String,
+    isLiteMode: Boolean,
     onExploreMenu: () -> Unit,
+    onMoodRoulette: () -> Unit,
     onOpenCart: () -> Unit
 ) {
     Box(
@@ -444,19 +572,25 @@ private fun HomeHeroSection(
                     )
                 )
             )
-            .padding(22.dp)
+            .padding(20.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
-            GlowBadge(text = "✦ قهوة وطرب استثنائي ✦")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GlowBadge(text = "✦ قهوة وطرب استثنائي ✦")
+                if (isLiteMode) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    GlowBadge(text = "⚡ أداء فائق", isTeal = true)
+                }
+            }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = title,
-                fontSize = 24.sp,
+                fontSize = 23.sp,
                 fontWeight = FontWeight.Black,
                 color = MoodCreamText,
                 textAlign = TextAlign.Center
@@ -472,19 +606,19 @@ private fun HomeHeroSection(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 GoldGradientButton(
                     text = "استكشف المنيو ✨",
                     onClick = onExploreMenu
                 )
                 GoldGradientButton(
-                    text = "السلة 🛒",
+                    text = "🎲 عجلة المزاج",
                     isOutline = true,
-                    onClick = onOpenCart
+                    onClick = onMoodRoulette
                 )
             }
         }
@@ -494,15 +628,57 @@ private fun HomeHeroSection(
 @Composable
 private fun CategoryPillsRow(
     selectedCategory: ProductCategory,
-    onSelectCategory: (ProductCategory) -> Unit
+    showFavoritesOnly: Boolean,
+    favoritesCount: Int,
+    onSelectCategory: (ProductCategory) -> Unit,
+    onToggleFavoritesOnly: () -> Unit
 ) {
     val categories = ProductCategory.values()
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
+        // Favorites Quick Pill
+        item {
+            val isFavSelected = showFavoritesOnly
+            val shape = RoundedCornerShape(16.dp)
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .border(
+                        BorderStroke(
+                            1.dp,
+                            if (isFavSelected) Color(0xFFFF5252) else MoodGlassBorder
+                        ),
+                        shape
+                    )
+                    .background(
+                        if (isFavSelected) Color(0xFFFF5252) else MoodGlassSurface
+                    )
+                    .clickable { onToggleFavoritesOnly() }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isFavSelected) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = null,
+                        tint = if (isFavSelected) Color.White else Color(0xFFFF5252),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "المفضلة ($favoritesCount)",
+                        fontSize = 12.sp,
+                        fontWeight = if (isFavSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isFavSelected) Color.White else MoodCreamText
+                    )
+                }
+            }
+        }
+
         items(categories) { cat ->
-            val isSelected = selectedCategory == cat
+            val isSelected = !showFavoritesOnly && selectedCategory == cat
             val shape = RoundedCornerShape(16.dp)
             Box(
                 modifier = Modifier
@@ -518,15 +694,15 @@ private fun CategoryPillsRow(
                         if (isSelected) MoodGoldPrimary else MoodGlassSurface
                     )
                     .clickable { onSelectCategory(cat) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = cat.icon, fontSize = 14.sp)
+                    Text(text = cat.icon, fontSize = 13.sp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = cat.titleAr,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isSelected) MoodDarkInk else MoodMutedText
                     )
@@ -796,3 +972,4 @@ private fun CafeInfoCard(
         }
     }
 }
+
